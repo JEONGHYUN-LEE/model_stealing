@@ -1,12 +1,15 @@
 import torch
 import torchvision
 from torchvision.transforms import transforms
-
 import models
+
 
 def get_models(model_name):
     if model_name == 'resnet20':
         return models.resnet20()
+    elif model_name == 'modelA':
+        return models.ModelA()
+
 
 def get_dataloader(dataset_name):
     trainloader, testloader = None, None

@@ -13,7 +13,9 @@ from torch.autograd import Variable
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.utils.data.sampler import SubsetRandomSampler
-# from grad_cam import *
+from grad_cam import *
+from torchvision import datasets, transforms as T
+import torchvision
 import random
 
 
@@ -23,35 +25,41 @@ torch.manual_seed(1)
 torch.cuda.manual_seed(1)
 np.random.seed(1)
 
+
 def run(config):
 
     params = munchify(config)
     device = params.device
 
     # Load Victim Model
-    victim_model = get_models('modelA')
+    victim_model = torchvision.models.resnet18(pretrained=True, progress=True)
     victim_model.to(device)
-    victim_model.load_state_dict(torch.load(params.victim_model_path))
 
     # Load Victim Model
-    attack_model = get_models('modelA')
+    attack_model = torchvision.models.resnet18(pretrained=False, progress=True)
     attack_model.to(device)
 
+    # Transform
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    ])
+
     # Load Full Dataset
-    train_dataset = datasets.MNIST(root='../data/', train=True,
-                                   download=True, transform=transforms.ToTensor())
-    test_dataset = datasets.MNIST(root='../data/', train=False,
-                                  download=True, transform=transforms.ToTensor())
+    train_dataset = datasets.ImageNet("./data/10_class_imagenet/", split="train", transform=transform)
+    seed_dataset = datasets.ImageNet("./data/10_class_imagenet/", split="val", transform=transform)
+    test_dataset = datasets.ImageNet("./data/10_class_imagenet/", split="val", transform=transform)
 
     # Seed Trainset Indice
-    # indices = list(range(len(test_dataset)))
+    # indices = list(range(len(seed_dataset)))
     # rng = np.random.RandomState(1)
     # rng.shuffle(indices)
     # seed_idx = indices[:params.seed_size]
+    # print(seed_idx)
     # seed_sampler = SubsetRandomSampler(seed_idx)
-    # print(indices)
     # Get Seed Dataset (Subset of Full Testset)
-    seed_loader = torch.utils.data.DataLoader(test_dataset,
+    seed_loader = torch.utils.data.DataLoader(seed_dataset,
                                               batch_size=params.seed_size,
                                               # sampler=seed_sampler,
                                               shuffle=True)
@@ -98,7 +106,7 @@ def run(config):
             train_accs.append(train_acc)
             test_accs.append(test_acc)
             #         scheduler.step()
-            print("epoch:@@@ ", epoch,
+            print("epoch: ", epoch,
                   "train_acc: ", round(train_acc, 4),
                   "test_acc: ", round(test_acc, 4))
 
@@ -116,8 +124,8 @@ def run(config):
             y_new = query(query_loader, victim_model, device)
 
             # Concatenate Augmented Dataset
-            X = torch.cat([X, X_new], 0)
-            y = torch.cat([y, y_new.type(torch.LongTensor)], 0)
+            X = torch.cat([X, X_new[y_new < 10]], 0)
+            y = torch.cat([y, y_new[y_new < 10].type(torch.LongTensor)], 0)
             # torch.save([X, y], 'augment_sample.pt')
 
     path, file = os.path.split(params.save_path)
@@ -156,8 +164,9 @@ def jacobian_augmentation(model, X, y, device, _lambda=0.1, minus=1):
         # Get jacobian matrix
         grads = jacobian(model, data, device)
         # Select gradient corresponding to the label predicted by the oracle
+        # print(len(grads))
+        # print(label)
         grad = grads[label]
-
         # Compute sign matrix
         grad_val = torch.sign(grad)
 
